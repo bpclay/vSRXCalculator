@@ -239,26 +239,6 @@ The native firewall options have narrower discount paths — no BYOL equivalent 
 
 ---
 
-## SME Feedback Requested
-
-The following areas are where input from subject matter experts would be most valuable:
-
-1. **vSRX instance eligibility on GCP and Azure** — Are C2 standard (GCP) and Fsv2 (Azure) the correct families? Is there a published Juniper compatibility matrix for GCP/Azure that would replace the extrapolation?
-
-2. **vSRX SW fees on GCP and Azure** — Do you have access to current PAYG rates from the GCP or Azure Marketplace listings? The AWS rates are sourced directly; GCP/Azure are estimated.
-
-3. **Throughput figures** — The AWS datasheet numbers (Juniper/AWS joint datasheet) are used as the basis. Do these hold for GCP/Azure on equivalent-spec instances? Is there a Juniper performance guide covering all three clouds?
-
-4. **Feature tier multipliers** — The 0.50× (NGFW) and 0.35× (Premium) throughput multipliers are consistent with published Juniper guidance on IPS overhead. Are these conservative enough for worst-case sizing, or too aggressive?
-
-5. **Additional use cases** — For the planned east-west VPC and Direct Connect head-end scenarios, are there architectural constraints that would change the billing model materially (e.g., east-west traffic not traversing the internet gateway, eliminating the DTO charge)?
-
-6. **GCP Cloud NGFW tier selection** — The model uses Enterprise tier ($1.750/hr + $0.018/GB) as the ANF/Azure Firewall equivalent. Should Standard tier ($0.018/GB, no endpoint fee) be included as an option for workloads that don't require IDPS?
-
-7. **Azure Firewall Premium** — The model uses Standard tier ($1.250/hr). Should Premium ($1.750/hr, same data rate) be included as a selectable option?
-
----
-
 ## Planned Enhancements
 
 - Additional use cases (east-west, Direct Connect/ExpressRoute head-end)
