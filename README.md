@@ -255,4 +255,6 @@ The calculator is a **single self-contained HTML file** with no external depende
 
 The file is structured for expansion into a multi-scenario React application via Claude Code. Each cloud provider is a self-contained configuration object (`CLOUDS.aws`, `CLOUDS.gcp`, `CLOUDS.azure`) with its own pricing constants, calculation functions, and line-item renderers. Adding a new use case involves extending these objects with scenario-specific calc functions keyed by use case value.
 
+**Updating pricing:** All rate constants (endpoint $/hr, data processing $/GB, hub/transit fees, DTO) live in a `rates:` config block near the top of each cloud entry. Edit values there — no need to touch the calc or render logic.
+
 ---
