@@ -86,11 +86,14 @@ The tool dynamically recommends an instance size based on the traffic slider and
 3. Apply the feature tier's **throughput multiplier** to each instance's NIC bandwidth ceiling
 4. Select the **smallest instance whose effective throughput meets or exceeds the estimated peak**
 
-The recommendation is advisory — users can override the selection. The indicator shows three states:
+The calculator **auto-selects** the recommended instance by default — the dropdown updates silently whenever the traffic slider or feature tier changes. Switching cloud tabs resets the selection to auto.
 
-- ✓ **Recommended** — selected instance matches the recommendation
-- ↑ **Oversized** — selected instance exceeds what the traffic requires; a smaller instance is suggested
-- ⚠ **Undersized** — selected instance's effective throughput is insufficient for the estimated peak
+Users can manually override the dropdown at any time. The indicator below the dropdown shows four states:
+
+- ✓ **Auto-selected** — no override active; instance was set automatically for the current traffic + tier
+- ✓ **Matches recommendation** — user has overridden but selected the same instance the calculator would have chosen (+ Reset to auto link)
+- ↑ **Oversized** — selected instance exceeds what the traffic requires; a smaller instance is suggested (+ Reset to auto link)
+- ⚠ **Undersized** — selected instance's effective throughput is insufficient for the estimated peak (+ Reset to auto link)
 
 **Important caveat:** NIC bandwidth is used as the throughput ceiling proxy. Actual vSRX throughput is highly sensitive to packet size distribution, concurrent session count, Junos version, and SR-IOV/DPDK configuration. Treat the recommendation as directional, not a hard sizing guarantee.
 
