@@ -299,6 +299,22 @@ const CLOUDS = {
     vsrxDataQuality: 'sourced',
     vsrxDataNote: 'Throughput from Juniper/AWS official datasheet. SW fee anchored to CDW/distributor BYOL rates with PAYG multiplier applied.',
     winnerClass: 'winner-aws', activeTab: 'active-aws',
+
+    // ── AWS pricing assumptions ──────────────────────────────────────────────
+    // Edit these values to update rates without touching the calc logic below.
+    rates: {
+      anf: {
+        endpointHr:   0.395,  // ANF firewall endpoint $/hr (us-east-1)
+        dataGB:       0.065,  // ANF data processing $/GB (both directions billed)
+      },
+      tgw: {
+        attachmentHr: 0.050,  // TGW VPC attachment $/hr
+        dataGB:       0.020,  // TGW data processing $/GB
+      },
+      dto:            0.090,  // Data transfer out $/GB (first 10 TB tier)
+    },
+    // ────────────────────────────────────────────────────────────────────────
+
     instances: [
       { label: 'c5.large — 2 vCPU, 4 GiB ($0.085/hr)',    ec2: 0.085,  swBase: 0.65,  peakGbps: 1,   note: 'up to 10 Gbps NIC' },
       { label: 'c5.xlarge — 4 vCPU, 8 GiB ($0.170/hr)',   ec2: 0.170,  swBase: 0.75,  peakGbps: 2,   note: 'up to 10 Gbps NIC' },
@@ -326,46 +342,52 @@ const CLOUDS = {
     ],
     defaultInstance: 10,
     calcNative(perDirGB, az, atts) {
+      const r = this.rates;
       const billedGB = perDirGB * 2;
-      const epCost    = az * 0.395 * HOURS;
-      const dataCost  = billedGB * 0.065;
-      const hubAtt    = atts * 0.050 * HOURS;
-      const hubData   = billedGB * 0.020;
-      const dto       = perDirGB * 0.090;
+      const epCost   = az   * r.anf.endpointHr   * HOURS;
+      const dataCost = billedGB * r.anf.dataGB;
+      const hubAtt   = atts * r.tgw.attachmentHr  * HOURS;
+      const hubData  = billedGB * r.tgw.dataGB;
+      const dto      = perDirGB * r.dto;
       return { epCost, dataCost, hubAtt, hubData, dto, billedGB,
         core: epCost + dataCost, hub: hubAtt + hubData,
         total: epCost + dataCost + hubAtt + hubData + dto };
     },
     calcVSRX(perDirGB, az, atts, inst) {
+      const r = this.rates;
       const billedGB = perDirGB * 2;
-      const n    = 2 * az;
-      const ec2  = n * inst.ec2 * HOURS;
-      const sw   = n * inst.sw  * HOURS;
-      const hubAtt  = atts * 0.050 * HOURS;
-      const hubData = billedGB * 0.020;
-      const dto  = perDirGB * 0.090;
+      const n       = 2 * az;
+      const ec2     = n * inst.ec2 * HOURS;
+      const sw      = n * inst.sw  * HOURS;
+      const hubAtt  = atts * r.tgw.attachmentHr * HOURS;
+      const hubData = billedGB * r.tgw.dataGB;
+      const dto     = perDirGB * r.dto;
       return { ec2, sw, hubAtt, hubData, dto, n, billedGB,
         core: ec2 + sw, hub: hubAtt + hubData,
         total: ec2 + sw + hubAtt + hubData + dto };
     },
-    nativeLinesFn(n, az, atts) { return `
+    nativeLinesFn(n, az, atts) {
+      const r = this.rates;
+      return `
       <div class="sh">ANF firewall</div>
-      <div class="ln"><span class="lb">Endpoint hours (${az} endpoints × 730 hrs @ $0.395)</span><span class="am">${fmtM(n.epCost)}</span></div>
-      <div class="ln"><span class="lb">Data processing $0.065/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.dataCost)}</span></div>
+      <div class="ln"><span class="lb">Endpoint hours (${az} endpoints × 730 hrs @ $${r.anf.endpointHr.toFixed(3)})</span><span class="am">${fmtM(n.epCost)}</span></div>
+      <div class="ln"><span class="lb">Data processing $${r.anf.dataGB.toFixed(3)}/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.dataCost)}</span></div>
       <div class="sh">Transit Gateway (shared)</div>
-      <div class="ln"><span class="lb">Attachment hours (${atts} atts × 730 hrs @ $0.050)</span><span class="am">${fmtM(n.hubAtt)}</span></div>
-      <div class="ln"><span class="lb">Data processing $0.020/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.hubData)}</span></div>
+      <div class="ln"><span class="lb">Attachment hours (${atts} atts × 730 hrs @ $${r.tgw.attachmentHr.toFixed(3)})</span><span class="am">${fmtM(n.hubAtt)}</span></div>
+      <div class="ln"><span class="lb">Data processing $${r.tgw.dataGB.toFixed(3)}/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.hubData)}</span></div>
       <div class="sh">Data transfer out</div>
-      <div class="ln"><span class="lb">DTO $0.090/GB × ${fmt0(n.billedGB/2)} GB</span><span class="am">${fmtM(n.dto)}</span></div>`; },
-    vsrxLinesFn(v, az, atts, inst) { return `
+      <div class="ln"><span class="lb">DTO $${r.dto.toFixed(3)}/GB × ${fmt0(n.billedGB/2)} GB</span><span class="am">${fmtM(n.dto)}</span></div>`; },
+    vsrxLinesFn(v, az, atts, inst) {
+      const r = this.rates;
+      return `
       <div class="sh">EC2 compute (${v.n} instances × 730 hrs)</div>
       <div class="ln"><span class="lb">EC2 @ $${inst.ec2.toFixed(3)}/hr</span><span class="am">${fmtM(v.ec2)}</span></div>
       <div class="ln"><span class="lb">Marketplace SW fee @ $${inst.sw.toFixed(3)}/hr</span><span class="am">${fmtM(v.sw)}</span></div>
       <div class="sh">Transit Gateway (shared)</div>
       <div class="ln"><span class="lb">Attachment hours (${atts} atts × 730 hrs)</span><span class="am">${fmtM(v.hubAtt)}</span></div>
-      <div class="ln"><span class="lb">Data processing $0.020/GB × ${fmt0(v.billedGB)} GB</span><span class="am">${fmtM(v.hubData)}</span></div>
+      <div class="ln"><span class="lb">Data processing $${r.tgw.dataGB.toFixed(3)}/GB × ${fmt0(v.billedGB)} GB</span><span class="am">${fmtM(v.hubData)}</span></div>
       <div class="sh">Data transfer out</div>
-      <div class="ln"><span class="lb">DTO $0.090/GB × ${fmt0(v.dto/0.090)} GB</span><span class="am">${fmtM(v.dto)}</span></div>`; },
+      <div class="ln"><span class="lb">DTO $${r.dto.toFixed(3)}/GB × ${fmt0(v.dto/r.dto)} GB</span><span class="am">${fmtM(v.dto)}</span></div>`; },
     colors: { core: '#FF9900', hub: '#FFB84D', dto: '#FFD699' },
     notes: [
       { tag: 'sourced', text: 'ANF pricing sourced from AWS public pricing page (us-east-1). TGW rates from AWS Transit Gateway pricing page.' },
@@ -387,6 +409,22 @@ const CLOUDS = {
     vsrxDataQuality: 'estimated',
     vsrxDataNote: 'Throughput extrapolated from AWS datasheet by vCPU equivalence. SW fee estimated by analogy — no GCP-specific Juniper PAYG rate published.',
     winnerClass: 'winner-gcp', activeTab: 'active-gcp',
+
+    // ── GCP pricing assumptions ──────────────────────────────────────────────
+    // Edit these values to update rates without touching the calc logic below.
+    rates: {
+      ngfw: {
+        endpointHr:  1.750,  // Cloud NGFW Enterprise endpoint $/hr per region
+        dataGB:      0.018,  // NGFW data processing $/GB (both directions billed)
+      },
+      ncc: {
+        spokeHr:     0.100,  // NCC VPC spoke $/hr
+        adnGB:       0.020,  // ADN (Advanced Data Networking) fee $/GiB
+      },
+      dto:           0.085,  // GCE egress $/GB (us-central1, first 1 TB tier)
+    },
+    // ────────────────────────────────────────────────────────────────────────
+
     instances: [
       { label: 'c2-standard-4 — 4 vCPU, 16 GiB ($0.209/hr)',  ec2: 0.209, swBase: 0.700, peakGbps: 3,   note: 'up to 10 Gbps NIC' },
       { label: 'c2-standard-8 — 8 vCPU, 32 GiB ($0.418/hr)',  ec2: 0.418, swBase: 0.900, peakGbps: 6,   note: 'up to 16 Gbps NIC' },
@@ -396,46 +434,52 @@ const CLOUDS = {
     ],
     defaultInstance: 1,
     calcNative(perDirGB, az, atts) {
+      const r = this.rates;
       const billedGB = perDirGB * 2;
-      const epCost   = az * 1.750 * HOURS;
-      const dataCost = billedGB * 0.018;
-      const hubAtt   = atts * 0.100 * HOURS;
-      const hubData  = billedGB * 0.020;
-      const dto      = perDirGB * 0.085;
+      const epCost   = az   * r.ngfw.endpointHr * HOURS;
+      const dataCost = billedGB * r.ngfw.dataGB;
+      const hubAtt   = atts * r.ncc.spokeHr     * HOURS;
+      const hubData  = billedGB * r.ncc.adnGB;
+      const dto      = perDirGB * r.dto;
       return { epCost, dataCost, hubAtt, hubData, dto, billedGB,
         core: epCost + dataCost, hub: hubAtt + hubData,
         total: epCost + dataCost + hubAtt + hubData + dto };
     },
     calcVSRX(perDirGB, az, atts, inst) {
+      const r = this.rates;
       const billedGB = perDirGB * 2;
-      const n   = 2 * az;
-      const ec2 = n * inst.ec2 * HOURS;
-      const sw  = n * inst.sw  * HOURS;
-      const hubAtt  = atts * 0.100 * HOURS;
-      const hubData = billedGB * 0.020;
-      const dto = perDirGB * 0.085;
+      const n       = 2 * az;
+      const ec2     = n * inst.ec2 * HOURS;
+      const sw      = n * inst.sw  * HOURS;
+      const hubAtt  = atts * r.ncc.spokeHr * HOURS;
+      const hubData = billedGB * r.ncc.adnGB;
+      const dto     = perDirGB * r.dto;
       return { ec2, sw, hubAtt, hubData, dto, n, billedGB,
         core: ec2 + sw, hub: hubAtt + hubData,
         total: ec2 + sw + hubAtt + hubData + dto };
     },
-    nativeLinesFn(n, az, atts) { return `
+    nativeLinesFn(n, az, atts) {
+      const r = this.rates;
+      return `
       <div class="sh">Cloud NGFW Enterprise</div>
-      <div class="ln"><span class="lb">Endpoint hours (${az} endpoints × 730 hrs @ $1.750)</span><span class="am">${fmtM(n.epCost)}</span></div>
-      <div class="ln"><span class="lb">Data processing $0.018/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.dataCost)}</span></div>
+      <div class="ln"><span class="lb">Endpoint hours (${az} endpoints × 730 hrs @ $${r.ngfw.endpointHr.toFixed(3)})</span><span class="am">${fmtM(n.epCost)}</span></div>
+      <div class="ln"><span class="lb">Data processing $${r.ngfw.dataGB.toFixed(3)}/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.dataCost)}</span></div>
       <div class="sh">Network Connectivity Center (shared)</div>
-      <div class="ln"><span class="lb">VPC spoke hours (${atts} spokes × 730 hrs @ $0.100)</span><span class="am">${fmtM(n.hubAtt)}</span></div>
-      <div class="ln"><span class="lb">ADN fee $0.020/GiB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.hubData)}</span></div>
+      <div class="ln"><span class="lb">VPC spoke hours (${atts} spokes × 730 hrs @ $${r.ncc.spokeHr.toFixed(3)})</span><span class="am">${fmtM(n.hubAtt)}</span></div>
+      <div class="ln"><span class="lb">ADN fee $${r.ncc.adnGB.toFixed(3)}/GiB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.hubData)}</span></div>
       <div class="sh">Data transfer out</div>
-      <div class="ln"><span class="lb">GCE DTO $0.085/GB × ${fmt0(n.billedGB/2)} GB</span><span class="am">${fmtM(n.dto)}</span></div>`; },
-    vsrxLinesFn(v, az, atts, inst) { return `
+      <div class="ln"><span class="lb">GCE DTO $${r.dto.toFixed(3)}/GB × ${fmt0(n.billedGB/2)} GB</span><span class="am">${fmtM(n.dto)}</span></div>`; },
+    vsrxLinesFn(v, az, atts, inst) {
+      const r = this.rates;
+      return `
       <div class="sh">Compute Engine (${v.n} instances × 730 hrs)</div>
       <div class="ln"><span class="lb">CE @ $${inst.ec2.toFixed(3)}/hr</span><span class="am">${fmtM(v.ec2)}</span></div>
       <div class="ln"><span class="lb">Marketplace SW fee @ $${inst.sw.toFixed(3)}/hr</span><span class="am">${fmtM(v.sw)}</span></div>
       <div class="sh">Network Connectivity Center (shared)</div>
       <div class="ln"><span class="lb">VPC spoke hours (${atts} spokes × 730 hrs)</span><span class="am">${fmtM(v.hubAtt)}</span></div>
-      <div class="ln"><span class="lb">ADN fee $0.020/GiB × ${fmt0(v.billedGB)} GB</span><span class="am">${fmtM(v.hubData)}</span></div>
+      <div class="ln"><span class="lb">ADN fee $${r.ncc.adnGB.toFixed(3)}/GiB × ${fmt0(v.billedGB)} GB</span><span class="am">${fmtM(v.hubData)}</span></div>
       <div class="sh">Data transfer out</div>
-      <div class="ln"><span class="lb">GCE DTO $0.085/GB × ${fmt0(v.dto/0.085)} GB</span><span class="am">${fmtM(v.dto)}</span></div>`; },
+      <div class="ln"><span class="lb">GCE DTO $${r.dto.toFixed(3)}/GB × ${fmt0(v.dto/r.dto)} GB</span><span class="am">${fmtM(v.dto)}</span></div>`; },
     colors: { core: '#4285F4', hub: '#7BAFF7', dto: '#B3D0FB' },
     notes: [
       { tag: 'sourced',   text: 'Cloud NGFW Enterprise pricing ($1.750/hr endpoint, $0.018/GB) sourced from GCP public pricing page.' },
@@ -458,6 +502,23 @@ const CLOUDS = {
     vsrxDataQuality: 'estimated',
     vsrxDataNote: 'Throughput extrapolated from AWS datasheet by vCPU equivalence. Azure Marketplace listing states prices are intentionally high; actual rates require private offer from Juniper.',
     winnerClass: 'winner-azure', activeTab: 'active-azure',
+
+    // ── Azure pricing assumptions ────────────────────────────────────────────
+    // Edit these values to update rates without touching the calc logic below.
+    rates: {
+      firewall: {
+        deployHr:    1.250,  // Azure Firewall Standard deployment $/hr
+        dataGB:      0.016,  // Firewall data processing $/GB
+      },
+      vwan: {
+        hubHr:       0.250,  // vWAN Standard Hub deployment $/hr
+        hubDataGB:   0.020,  // vWAN hub data processing $/GB
+        vnetPeerGB:  0.010,  // VNet peering $/GB
+      },
+      dto:           0.087,  // Data transfer out $/GB (Zone 1)
+    },
+    // ────────────────────────────────────────────────────────────────────────
+
     instances: [
       { label: 'F4s v2 — 4 vCPU, 8 GiB ($0.169/hr)',   ec2: 0.169, swBase: 0.700, peakGbps: 3,   note: '3.125 Gbps NIC' },
       { label: 'F8s v2 — 8 vCPU, 16 GiB ($0.338/hr)',  ec2: 0.338, swBase: 0.900, peakGbps: 6,   note: '6.25 Gbps NIC' },
@@ -467,50 +528,56 @@ const CLOUDS = {
     ],
     defaultInstance: 1,
     calcNative(perDirGB, az, atts) {
+      const r = this.rates;
       const billedGB  = perDirGB * 2;
-      const fwDeploy  = az * 1.250 * HOURS;
-      const fwData    = billedGB * 0.016;
-      const hubDeploy = az * 0.250 * HOURS;
-      const hubData   = billedGB * 0.020;
-      const vnetPeer  = billedGB * 0.010;
-      const dto       = perDirGB * 0.087;
+      const fwDeploy  = az * r.firewall.deployHr  * HOURS;
+      const fwData    = billedGB * r.firewall.dataGB;
+      const hubDeploy = az * r.vwan.hubHr          * HOURS;
+      const hubData   = billedGB * r.vwan.hubDataGB;
+      const vnetPeer  = billedGB * r.vwan.vnetPeerGB;
+      const dto       = perDirGB * r.dto;
       return { fwDeploy, fwData, hubDeploy, hubData, vnetPeer, dto, billedGB,
         core: fwDeploy + fwData, hub: hubDeploy + hubData + vnetPeer,
         total: fwDeploy + fwData + hubDeploy + hubData + vnetPeer + dto };
     },
     calcVSRX(perDirGB, az, atts, inst) {
+      const r = this.rates;
       const billedGB  = perDirGB * 2;
       const n         = 2 * az;
       const vm        = n * inst.ec2 * HOURS;
       const sw        = n * inst.sw  * HOURS;
-      const hubDeploy = az * 0.250 * HOURS;
-      const hubData   = billedGB * 0.020;
-      const vnetPeer  = billedGB * 0.010;
-      const dto       = perDirGB * 0.087;
+      const hubDeploy = az * r.vwan.hubHr    * HOURS;
+      const hubData   = billedGB * r.vwan.hubDataGB;
+      const vnetPeer  = billedGB * r.vwan.vnetPeerGB;
+      const dto       = perDirGB * r.dto;
       return { vm, sw, hubDeploy, hubData, vnetPeer, dto, n, billedGB,
         core: vm + sw, hub: hubDeploy + hubData + vnetPeer,
         total: vm + sw + hubDeploy + hubData + vnetPeer + dto };
     },
-    nativeLinesFn(n, az, atts) { return `
+    nativeLinesFn(n, az, atts) {
+      const r = this.rates;
+      return `
       <div class="sh">Azure Firewall Standard</div>
-      <div class="ln"><span class="lb">Deployment hours (${az} instances × 730 hrs @ $1.250)</span><span class="am">${fmtM(n.fwDeploy)}</span></div>
-      <div class="ln"><span class="lb">Data processing $0.016/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.fwData)}</span></div>
+      <div class="ln"><span class="lb">Deployment hours (${az} instances × 730 hrs @ $${r.firewall.deployHr.toFixed(3)})</span><span class="am">${fmtM(n.fwDeploy)}</span></div>
+      <div class="ln"><span class="lb">Data processing $${r.firewall.dataGB.toFixed(3)}/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.fwData)}</span></div>
       <div class="sh">Virtual WAN Standard Hub (shared)</div>
-      <div class="ln"><span class="lb">Hub deployment (${az} hubs × 730 hrs @ $0.250)</span><span class="am">${fmtM(n.hubDeploy)}</span></div>
-      <div class="ln"><span class="lb">Hub data processing $0.020/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.hubData)}</span></div>
-      <div class="ln"><span class="lb">VNet peering $0.010/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.vnetPeer)}</span></div>
+      <div class="ln"><span class="lb">Hub deployment (${az} hubs × 730 hrs @ $${r.vwan.hubHr.toFixed(3)})</span><span class="am">${fmtM(n.hubDeploy)}</span></div>
+      <div class="ln"><span class="lb">Hub data processing $${r.vwan.hubDataGB.toFixed(3)}/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.hubData)}</span></div>
+      <div class="ln"><span class="lb">VNet peering $${r.vwan.vnetPeerGB.toFixed(3)}/GB × ${fmt0(n.billedGB)} GB</span><span class="am">${fmtM(n.vnetPeer)}</span></div>
       <div class="sh">Data transfer out</div>
-      <div class="ln"><span class="lb">DTO $0.087/GB × ${fmt0(n.billedGB/2)} GB</span><span class="am">${fmtM(n.dto)}</span></div>`; },
-    vsrxLinesFn(v, az, atts, inst) { return `
+      <div class="ln"><span class="lb">DTO $${r.dto.toFixed(3)}/GB × ${fmt0(n.billedGB/2)} GB</span><span class="am">${fmtM(n.dto)}</span></div>`; },
+    vsrxLinesFn(v, az, atts, inst) {
+      const r = this.rates;
+      return `
       <div class="sh">Azure VM (${v.n} instances × 730 hrs)</div>
       <div class="ln"><span class="lb">VM @ $${inst.ec2.toFixed(3)}/hr</span><span class="am">${fmtM(v.vm)}</span></div>
       <div class="ln"><span class="lb">Marketplace SW fee @ $${inst.sw.toFixed(3)}/hr</span><span class="am">${fmtM(v.sw)}</span></div>
       <div class="sh">Virtual WAN Standard Hub (shared)</div>
       <div class="ln"><span class="lb">Hub deployment (${az} hubs × 730 hrs)</span><span class="am">${fmtM(v.hubDeploy)}</span></div>
-      <div class="ln"><span class="lb">Hub data processing $0.020/GB × ${fmt0(v.billedGB)} GB</span><span class="am">${fmtM(v.hubData)}</span></div>
-      <div class="ln"><span class="lb">VNet peering $0.010/GB × ${fmt0(v.billedGB)} GB</span><span class="am">${fmtM(v.vnetPeer)}</span></div>
+      <div class="ln"><span class="lb">Hub data processing $${r.vwan.hubDataGB.toFixed(3)}/GB × ${fmt0(v.billedGB)} GB</span><span class="am">${fmtM(v.hubData)}</span></div>
+      <div class="ln"><span class="lb">VNet peering $${r.vwan.vnetPeerGB.toFixed(3)}/GB × ${fmt0(v.billedGB)} GB</span><span class="am">${fmtM(v.vnetPeer)}</span></div>
       <div class="sh">Data transfer out</div>
-      <div class="ln"><span class="lb">DTO $0.087/GB × ${fmt0(v.dto/0.087)} GB</span><span class="am">${fmtM(v.dto)}</span></div>`; },
+      <div class="ln"><span class="lb">DTO $${r.dto.toFixed(3)}/GB × ${fmt0(v.dto/r.dto)} GB</span><span class="am">${fmtM(v.dto)}</span></div>`; },
     colors: { core: '#0078D4', hub: '#4DA6FF', dto: '#99CCFF' },
     notes: [
       { tag: 'sourced',   text: 'Azure Firewall Standard pricing ($1.250/hr, $0.016/GB) sourced from Azure Firewall public pricing page.' },
@@ -660,9 +727,12 @@ function calc() {
   document.getElementById('oDelta').textContent    = fmtK(delta) + '/mo — ' + winner;
   document.getElementById('oDeltaAnn').textContent = fmtK(delta * 12) + '/yr';
 
-  const nDataRate = activeCloud === 'aws' ? 0.065 : activeCloud === 'gcp' ? 0.018 : 0.016;
-  const nFixedCost = n.total - (perDirGB * 2 * nDataRate) - (perDirGB * 2 * 0.020) - (n.dto || 0);
-  const vFixedCost = v.total - (perDirGB * 2 * 0.020) - (v.dto || 0);
+  const r = c.rates;
+  const nDataRate  = activeCloud === 'aws' ? r.anf.dataGB : activeCloud === 'gcp' ? r.ngfw.dataGB : r.firewall.dataGB;
+  const nHubDataGB = activeCloud === 'aws' ? r.tgw.dataGB : activeCloud === 'gcp' ? r.ncc.adnGB   : r.vwan.hubDataGB;
+  const vHubDataGB = nHubDataGB;
+  const nFixedCost = n.total - (perDirGB * 2 * nDataRate) - (perDirGB * 2 * nHubDataGB) - (n.dto || 0);
+  const vFixedCost = v.total - (perDirGB * 2 * vHubDataGB) - (v.dto || 0);
   const beDiffFixed = vFixedCost - nFixedCost;
   let beText = '—';
   if (nDataRate > 0 && beDiffFixed > 0) {
