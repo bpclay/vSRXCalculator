@@ -264,7 +264,7 @@
       <h3>Juniper vSRX</h3>
       <p class="sub" id="vsrxSub"></p>
       <div style="display:flex; align-items:baseline; gap:6px; margin:6px 0 2px; flex-wrap:wrap;">
-        <div class="total" id="oVSRXTotal">—</div>
+        <div class="total" id="oVSRXTotal" style="margin:0;">—</div>
         <span id="oVSRXEstLabel" style="display:none; font-size:11px; font-weight:500; color:#7a4700;">est.<sup>†</sup></span>
       </div>
       <div style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">/month</div>
@@ -593,6 +593,7 @@ const CLOUDS = {
 
 let activeCloud = 'aws';
 let chart = null;
+let userOverrideInstance = false;
 
 const fmtM = n => {
   if (n >= 1000000) return '$' + (n/1000000).toFixed(3) + 'M';
@@ -637,6 +638,11 @@ function getUseCaseLabel() {
   return USE_CASES[sel.value] || sel.options[sel.selectedIndex].text;
 }
 
+function resetInstance() {
+  userOverrideInstance = false;
+  calc();
+}
+
 function setUseCase() {
   const c = CLOUDS[activeCloud];
   document.getElementById('cloud-label').textContent = c.label + ' · ' + getUseCaseLabel();
@@ -664,19 +670,29 @@ function setCloud(cloud) {
   const sel = document.getElementById('sInstance');
   sel.innerHTML = c.instances.map((inst, i) =>
     `<option value="${i}">${inst.label}</option>`).join('');
-  sel.selectedIndex = c.defaultInstance;
+  userOverrideInstance = false;
   calc();
 }
 
 function calc() {
-  const c         = CLOUDS[activeCloud];
-  const perDirTB  = parseInt(document.getElementById('sTraffic').value);
-  const perDirGB  = perDirTB * 1024;
-  const az        = parseInt(document.getElementById('sAZ').value);
-  const atts      = parseInt(document.getElementById('sTGW').value);
-  const inst      = getCurInst();
+  const c        = CLOUDS[activeCloud];
+  const perDirTB = parseInt(document.getElementById('sTraffic').value);
+  const perDirGB = perDirTB * 1024;
+  const az       = parseInt(document.getElementById('sAZ').value);
+  const atts     = parseInt(document.getElementById('sTGW').value);
+  const tier     = getCurTier();
 
-  const tier = getCurTier();
+  // Recommendation logic runs first so auto-select can update the dropdown before getCurInst() reads it
+  // perDirGB/mo → Gbps average = perDirGB * 8 / (30 * 86400)
+  const avgGbps  = (perDirGB * 8) / (30 * 86400);
+  const peakGbps = avgGbps * 4;
+  const recIdx   = c.instances.findIndex(i => (i.peakGbps * tier.throughputMult) >= peakGbps);
+  const autoIdx  = recIdx >= 0 ? recIdx : c.instances.length - 1;
+
+  const sel = document.getElementById('sInstance');
+  if (!userOverrideInstance) sel.selectedIndex = autoIdx;
+
+  const inst = getCurInst();
 
   document.getElementById('oTraffic').textContent = perDirTB;
   document.getElementById('oBilled').textContent =
@@ -687,31 +703,29 @@ function calc() {
     inst.note + ' · Effective @ ' + tier.label + ': ~' + inst.effectiveGbps.toFixed(1) +
     ' Gbps · SW fee $' + inst.sw.toFixed(3) + '/hr/instance';
 
-  // Tier note
   document.getElementById('oTierNote').textContent = tier.desc;
 
-  // Instance recommendation — size to 4× average peak, per direction
-  // perDirGB/mo → Gbps average = perDirGB * 8 / (30 * 86400)
-  const avgGbps    = (perDirGB * 8) / (30 * 86400);
-  const peakGbps   = avgGbps * 4;
-  const c2 = CLOUDS[activeCloud];
-  const recIdx = c2.instances.findIndex(i => (i.peakGbps * tier.throughputMult) >= peakGbps);
-  const recInst = recIdx >= 0 ? c2.instances[recIdx] : c2.instances[c2.instances.length - 1];
+  // Instance size banner
+  const recInst      = c.instances[autoIdx];
   const recEffective = (recInst.peakGbps * tier.throughputMult).toFixed(1);
-  const selIdx  = document.getElementById('sInstance').selectedIndex;
-  const selInst = c2.instances[selIdx];
-  const selEff  = selInst.peakGbps * tier.throughputMult;
-  const recEl   = document.getElementById('oInstRec');
+  const selIdx       = sel.selectedIndex;
+  const selEff       = c.instances[selIdx].peakGbps * tier.throughputMult;
+  const recEl        = document.getElementById('oInstRec');
+  const resetLink    = ' <a href="#" onclick="resetInstance();return false;" style="margin-left:6px;font-weight:400;text-decoration:underline;opacity:0.75;">Reset to auto</a>';
   recEl.style.display = 'flex';
-  if (selIdx === recIdx) {
+  recEl.style.alignItems = 'center';
+  if (!userOverrideInstance) {
     recEl.className = 'inst-rec match';
-    recEl.textContent = '✓ Recommended for this traffic + tier (' + peakGbps.toFixed(2) + ' Gbps est. peak, ' + recEffective + ' Gbps available)';
+    recEl.innerHTML = '✓ Auto-selected for this traffic + tier (' + peakGbps.toFixed(2) + ' Gbps est. peak, ' + recEffective + ' Gbps available)';
+  } else if (selIdx === autoIdx) {
+    recEl.className = 'inst-rec match';
+    recEl.innerHTML = '✓ Matches recommendation (' + peakGbps.toFixed(2) + ' Gbps est. peak, ' + recEffective + ' Gbps available)' + resetLink;
   } else if (selEff < peakGbps) {
     recEl.className = 'inst-rec under';
-    recEl.textContent = '⚠ Undersized — est. peak ' + peakGbps.toFixed(2) + ' Gbps exceeds ' + selEff.toFixed(1) + ' Gbps effective capacity';
+    recEl.innerHTML = '⚠ Undersized — est. peak ' + peakGbps.toFixed(2) + ' Gbps exceeds ' + selEff.toFixed(1) + ' Gbps effective capacity' + resetLink;
   } else {
     recEl.className = 'inst-rec over';
-    recEl.textContent = '↑ Oversized — recommended: ' + recInst.label.split(' — ')[0] + ' (' + recEffective + ' Gbps effective)';
+    recEl.innerHTML = '↑ Oversized — recommended: ' + recInst.label.split(' — ')[0] + ' (' + recEffective + ' Gbps effective)' + resetLink;
   }
 
   const n = c.calcNative(perDirGB, az, atts);
@@ -721,6 +735,7 @@ function calc() {
   document.getElementById('oVSRXTotal').textContent   = fmtK(v.total);
   document.getElementById('nativeLines').innerHTML    = c.nativeLinesFn(n, az, atts);
   document.getElementById('vsrxLines').innerHTML      = c.vsrxLinesFn(v, az, atts, inst);
+
 
   const delta  = Math.abs(n.total - v.total);
   const winner = n.total <= v.total ? c.nativeTitle + ' less expensive' : 'vSRX less expensive';
@@ -816,7 +831,10 @@ function calc() {
 
 ['sTraffic','sAZ','sTGW'].forEach(id =>
   document.getElementById(id).addEventListener('input', calc));
-document.getElementById('sInstance').addEventListener('change', calc);
+document.getElementById('sInstance').addEventListener('change', () => {
+  userOverrideInstance = true;
+  calc();
+});
 document.getElementById('sFeatureTier').addEventListener('change', calc);
 
 setCloud('aws');
