@@ -256,8 +256,7 @@
       <h3 id="nativeTitle"></h3>
       <p class="sub" id="nativeSub"></p>
       <div class="total" id="oNativeTotal">—</div>
-      <div style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">/month</div>
-      <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:12px;" id="oNativeGbps"></div>
+      <div style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">/month</div>
       <div id="nativeLines"></div>
     </div>
     <div class="card" id="cardVSRX">
@@ -268,8 +267,7 @@
         <div class="total" id="oVSRXTotal">—</div>
         <span id="oVSRXEstLabel" style="display:none; font-size:11px; font-weight:500; color:#7a4700;">est.<sup>†</sup></span>
       </div>
-      <div style="font-size:12px; color:var(--text-secondary); margin-bottom:4px;">/month</div>
-      <div style="font-size:11px; color:var(--text-tertiary); margin-bottom:12px;" id="oVSRXGbps"></div>
+      <div style="font-size:12px; color:var(--text-secondary); margin-bottom:12px;">/month</div>
       <div id="vsrxLines"></div>
     </div>
   </div>
@@ -738,14 +736,6 @@ function calc() {
   document.getElementById('nativeLines').innerHTML    = c.nativeLinesFn(n, az, atts);
   document.getElementById('vsrxLines').innerHTML      = c.vsrxLinesFn(v, az, atts, inst);
 
-  // Cost per effective Gbps
-  // Native: elastic — no fixed capacity, so denominator is actual average bidirectional throughput
-  // vSRX:   fixed capacity — denominator is total provisioned effective throughput (HA pair × AZs)
-  const avgBidirGbps = avgGbps * 2;
-  const provGbps     = inst.effectiveGbps * 2 * az;
-  const fmtGbps      = v => '$' + Math.round(v).toLocaleString('en-US') + '/Gbps';
-  document.getElementById('oNativeGbps').textContent = fmtGbps(n.total / avgBidirGbps) + ' · avg throughput';
-  document.getElementById('oVSRXGbps').textContent   = fmtGbps(v.total / provGbps) + ' · provisioned capacity';
 
   const delta  = Math.abs(n.total - v.total);
   const winner = n.total <= v.total ? c.nativeTitle + ' less expensive' : 'vSRX less expensive';
